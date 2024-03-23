@@ -264,7 +264,86 @@ def check_goal_reached(node_a, goal):
     if center_robot_in_radius_goal and orientation_valid:
         return True
     return False
+#A* ALGORITHM FUNCTIONS
+def create_nodes(initial_state, goal_state):
+    """Creates the State space of all possible movements until goal state is reached by applying the A* algorithm.
 
+    Args:
+            initial_state (array): multi dimensional array 3x3 that describes the initial configuarion of the puzzle
+            goal_state (array): multi dimensional array 3x3 that describes the final configuration the algorithm must find.
+
+    Returns:
+            str: 'DONE'. The process have ended thus we have a solution in the tree structure generated.
+    """
+    # Start the timer
+    start_time = time.time()
+    goal_reached = False
+    counter_nodes = 0
+    distance_init_goal = distance(initial_state[0:2], goal_state[0:2])
+    cost_init = (distance_init_goal, 0, distance_init_goal)
+    initial_node = cost_init + (0, None) + initial_state
+    # Add initial node to the heap
+    hq.heappush(generated_nodes, initial_node)
+    while not goal_reached and len(generated_nodes):
+        print(counter_nodes)
+        current_node = generated_nodes[0]
+        hq.heappop(generated_nodes)
+        # Mark node as visited
+        visited_nodes.append(current_node)
+        #for check duplicates
+        add_to_check_matrix(current_node[5:])
+        visited_vectors[current_node[5:7]] = []
+        # Check if popup_node is goal state
+        goal_reached = check_goal_reached(current_node[5:], goal_state)
+        if goal_reached:
+            goal_reached = True
+            end_time = time.time()
+            return f'DONE in {end_time-start_time} seconds.'
+        # Apply action set to node to get new states/children
+        for action in action_set:
+            child = action_move(current_node, action)
+            # If movement was not possible, ignore it
+            if not child:
+                continue
+            visited_vectors[current_node[5:7]].append(child[5:7])
+            # Check if child is in open list generated nodes
+            where_is_node = 0
+            is_in_open_list = False
+            for node in generated_nodes:
+                if node[5:] == child[5:]:
+                    is_in_open_list = True
+                    break
+                where_is_node += 1
+            if not is_in_open_list:
+                counter_nodes += 1
+                child_to_enter = child[0:3] + (counter_nodes,) + child[4:]
+                hq.heappush(generated_nodes, child_to_enter)
+            # check if cost to come is greater in node in open list
+            elif generated_nodes[where_is_node][1] > child[1]:
+                # Update parent node and cost of this node in the generated nodes heap
+                current_index = generated_nodes[where_is_node][3]
+                generated_nodes[where_is_node] = child[0:3] + (current_index,) + child[4:]
+    end_time = time.time()
+    print(f'No solution found. Process took {end_time-start_time} seconds.')
+    return None
+
+def generate_path(node):
+	"""Generate the path from the initial node to the goal state.
+
+	Args:
+		node (Node): Current node to evaluate its parent (previous move done).
+	Returns:
+		Boolean: True if no more of the path are available
+	"""
+	while node is not None:
+		goal_path.append(node[5:])
+		parent_at = 0
+		for node_check in visited_nodes:
+			if node_check[3] == node[4]:
+				break
+			parent_at += 1
+		node = visited_nodes[parent_at] if parent_at < len(visited_nodes) else None
+	return True
 
 
 #USER VARIABLES
@@ -296,3 +375,14 @@ check_duplicates_space = np.zeros(
 #* Provides matrices of rotation to instead apply sin/cos
 rotation_angle_matrices = np.array([ rotation_vectors_by(angle) for angle in angle_values_real ])
 
+solution = create_nodes(initial_state, goal_state)
+print(solution)
+if not solution:
+    exit(0)
+
+generate_path(visited_nodes[-1], goal_path)
+#for animation of backtracking shortest path
+x_shortest = goal_path[:,0]
+y_shortest = goal_path[:,1]
+
+#ANIMATION
