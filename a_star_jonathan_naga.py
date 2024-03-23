@@ -183,7 +183,87 @@ def rotation_vectors_by(angle):
                         round(-np.sin(angle_rad), 2)],
                             [round(np.sin(angle_rad), 2),
                                 round(np.cos(angle_rad), 2)]])
+#FUNCTIONS FOR APPLY A* ALGORITHM
+def round_float(number):
+    if number % 1 < 0.25:
+        return int(number)
+    elif number % 1 < 0.75:
+        return int(number) + 0.5
+    else:
+        return int(number) + 1
 
+def get_vector(node_a, node_b):
+    return tuple(x - y for x, y in zip(node_a, node_b))
+
+def distance(node_a, node_b):
+    substract_vector = get_vector(node_a, node_b)
+    #? Euclidean distance squared has given better performance
+    return substract_vector[0]**2 + substract_vector[1]**2
+
+def apply_action(state, type_action):
+    x_pos, y_pos, theta = state
+    action_to_do = action_operator.get(type_action, None)
+    if action_to_do is None:
+        return None
+    value_angle = angle_values_real[action_to_do]
+    rotation_index = int(theta * factor_angle)
+    vector_front = np.dot(rotation_angle_matrices[rotation_index], normal_x_vector)
+    new_vector = np.dot(rotation_angle_matrices[action_to_do], vector_front) * step_size
+    x_pos_new = round_float(round(x_pos + new_vector[0], 2))
+    y_pos_new = round_float(round(y_pos + new_vector[1], 2))
+    angle_degrees = theta + value_angle
+    if angle_degrees > 180:
+        angle_degrees = angle_degrees - 360
+    if angle_degrees < -180:
+        angle_degrees = angle_degrees + 360
+    return (x_pos_new, y_pos_new, angle_degrees)
+
+def convert_check_matrix(node):
+    x_pos, y_pos, theta = node
+    x_pos_true = int(x_pos * factor_distance)
+    y_pos_true = int(y_pos * factor_distance)
+    angle_index = int(theta * factor_angle)
+    return (x_pos_true, y_pos_true, angle_index)
+
+def add_to_check_matrix(node):
+    x_pos_true, y_pos_true, angle_index = convert_check_matrix(node)
+    check_duplicates_space[x_pos_true, y_pos_true, angle_index] = 1
+
+def is_duplicate(node):
+    x_pos_true, y_pos_true, angle_index = convert_check_matrix(node)
+    if check_duplicates_space[x_pos_true, y_pos_true, angle_index] == 1:
+        return True
+    return False
+
+def action_move(current_node, action):
+    """
+    Args:
+        current_node (Node): Node to move
+
+    Returns:
+        Node: new Node with new configuration and state
+    """
+    state_moved = apply_action(current_node[5:], action)
+    # *check by the state duplicate values between the children
+    node_already_visited = is_duplicate(state_moved)
+    if node_already_visited:
+        return None
+    # *check new node is in obstacle space
+    if check_in_obstacle(state_moved[0:2], border_obstacle):
+        return None
+    new_cost_to_come = current_node[1] + step_size
+    new_cost_to_go = distance(state_moved[0:2], goal_state[0:2]) #heuristic function
+    new_total_cost =  new_cost_to_come + new_cost_to_go
+    new_node = (new_total_cost, new_cost_to_come, new_cost_to_go) + (-1, current_node[3]) + state_moved
+    return new_node
+
+def check_goal_reached(node_a, goal):
+    dist_centers = distance(node_a[0:2], goal[0:2])
+    orientation_valid = np.abs(node_a[2] - goal[2]) <= 2*th_angle
+    center_robot_in_radius_goal = dist_centers < radius_goal**2
+    if center_robot_in_radius_goal and orientation_valid:
+        return True
+    return False
 
 
 
