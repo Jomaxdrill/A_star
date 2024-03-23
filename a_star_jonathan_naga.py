@@ -37,6 +37,8 @@ action_operator = {
 }
 action_set = tuple(action_operator.keys())
 
+
+#***************USER INPUT FUNCTIONS***************
 def coordinate_input(name):
     value_provided = False
     while not value_provided:
@@ -110,6 +112,7 @@ def param_robot_input():
             else:
                 print(err)
 
+#***************CHECK FUNCTIONS***************
 def check_in_obstacle(state, border):
 	tl = border
 	x_pos, y_pos = state
@@ -171,6 +174,19 @@ def check_in_obstacle(state, border):
 		return True
 	return False
 
+#FUNCTIONS FOR GENERAL VARIABLES
+def rotation_vectors_by(angle):
+    if angle < 0:
+        angle = angle % 360
+    angle_rad = np.radians(angle)
+    return np.array([[round(np.cos(angle_rad), 2),
+                        round(-np.sin(angle_rad), 2)],
+                            [round(np.sin(angle_rad), 2),
+                                round(np.cos(angle_rad), 2)]])
+
+
+
+
 #USER VARIABLES
 initial_state = coordinate_input('initial')
 goal_state = coordinate_input('goal')
@@ -180,5 +196,23 @@ verify_initial_position = check_in_obstacle(initial_state[0:2], border_obstacle)
 verify_goal_position = check_in_obstacle(goal_state[0:2], border_obstacle)
 if verify_initial_position:
     print("START HITS OBSTACLE!! Please run the program again.")
+    exit(0)
 if verify_goal_position:
     print("GOAL HITS OBSTACLE!! Please run the program again.")
+    exit(0)
+
+#GENERAL VARIABLES FOR A*
+generated_nodes = []  # open list
+generated_nodes_total = []  # for animation of all
+
+#* Set class has given excellent performance for Repeated-state checking
+visited_nodes = []  # full list node visited
+visited_vectors = {} # for animation
+goal_path = np.array([]) #nodes shortest path
+hq.heapify(generated_nodes)
+
+check_duplicates_space = np.zeros(
+    (rows_check_space, cols_check_space, angle_check_space))
+#* Provides matrices of rotation to instead apply sin/cos
+rotation_angle_matrices = np.array([ rotation_vectors_by(angle) for angle in angle_values_real ])
+
