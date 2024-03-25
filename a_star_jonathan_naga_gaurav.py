@@ -502,13 +502,28 @@ rotation_angle_matrices = np.array([ rotation_vectors_by(angle) for angle in ang
 
 solution = create_nodes(initial_state, goal_state)
 print(solution)
-# if not solution:
-# 	exit(0)
+if not solution:
+	exit(0)
 
 generate_path(visited_nodes[-1])#modifies goal path
 
 #*#####ANIMATION#######
 def draw_rotated_hexagon(image, center, side_length, color, rotation_angle, thickness=1):
+    """
+    Draws a filled hexagon on an image.
+
+    Args:
+        image (np.ndarray): The image on which to draw the hexagon.
+        center (tuple): The (x, y) coordinates of the center of the hexagon.
+        side_length (float): The length of the sides of the hexagon.
+        color (tuple): The color of the hexagon, specified as a tuple of RGB values (0-255).
+        rotation_angle (float): The angle, in degrees, by which to rotate the hexagon.
+        thickness (int, optional): The thickness of the outline of the hexagon, in pixels. Defaults to 1.
+
+    Returns:
+        None: This function does not return any values.
+
+    """
     # Calculate the coordinates of the hexagon vertices
     angle = 60  # Angle between consecutive vertices of a regular hexagon
     hexagon_points = np.array([
@@ -529,6 +544,14 @@ def draw_rotated_hexagon(image, center, side_length, color, rotation_angle, thic
     cv2.polylines(image, [hexagon_points], isClosed=True, color=(255, 255, 255), thickness=thickness)
 
 def generated_map():
+    """
+    Creates a blank image with the outer boundary of the arena drawn on it.
+    Draws filled rectangles for the initial and goal states, and outlines for them.
+    Defines the polygon points for the rotated hexagon and the polygon.
+    Draws the rotated hexagon and the filled polygon, and outlines them.
+    Returns:
+        np.ndarray: The blank image with the arena drawn on it.
+    """
     # Create a blank image
     arena = np.zeros((500, 1200, 3), dtype="uint8")
     # Draw the outer boundary

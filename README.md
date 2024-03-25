@@ -36,4 +36,4 @@ opencv-python 4.9.0.80
 
 -While program is running information of the node count will display
 
--the program informs success or not and finalizes creating a video file called 'a_star_jonathan_naga_gaurav.mp4' which animates the node exploration and optimal path found.
+-The program informs success or not. If success, it will finish by creating a video file called 'a_star_jonathan_naga_gaurav.mp4' which animates the node exploration and optimal path found.
