@@ -1,10 +1,8 @@
 import heapq as hq
 import numpy as np
 import time
-import matplotlib.pyplot as plt
-from matplotlib import animation
-from functools import partial
 import numpy as np
+import cv2
 
 #***************INITIALIZE OF CONSTANTS***************
 #*variables to calculate time taken
@@ -27,7 +25,7 @@ cols_check_space = int(height_space * factor_distance)
 angle_check_space = int(360 * factor_angle)
 angle_values_raw = list(range(0, 7)) + list(range(-5, 0))
 angle_values_real = th_angle * np.array(angle_values_raw)
-transformation_matrix = [ [0,-1,cols_check_space],[1,0,0],[0,0,1] ] #[[scale_factor, 0], [0, scale_factor]]
+transformation_matrix = [ [0,-1,height_space],[1,0,0],[0,0,1] ] #[[scale_factor, 0], [0, scale_factor]]
 action_operator = {
 	'60_up': 2,
 	'30_up': 1,
@@ -74,7 +72,7 @@ def coordinate_input(name):
 				raise Exception('CoordsNotValid')
 			confirm = input('Confirm coordinate? (y/n): ')
 			if confirm == 'y':
-				print(f'The coordinate is: { coord_process }\n')
+				print(f'The coordinates are: { coord_process }\n')
 				return (coord_process[0], coord_process[1], coord_process[2])
 			else:
 				print('*****Must write coordinate again****')
@@ -276,6 +274,7 @@ def distance(node_a, node_b):
 	#? Euclidean distance squared has given better performance
 	return substract_vector[0]**2 + substract_vector[1]**2
 
+
 def apply_action(state, type_action):
 	"""
 	Applies the given action to the given state.
@@ -334,10 +333,11 @@ def add_to_check_matrix(node):
 	"""
 	x_pos_true, y_pos_true, angle_index = convert_check_matrix(node)
 	check_duplicates_space[x_pos_true, y_pos_true, angle_index] = 1
-	#? testing for faster node unqueue
+	#? attempts for faster node removal
 	# check_duplicates_space[x_pos_true, y_pos_true, angle_index + 1] = 1
-    # check_duplicates_space[x_pos_true, y_pos_true, angle_index - 1] = 1
-    # check_duplicates_space[x_pos_true, y_pos_true, :] = 1
+	# check_duplicates_space[x_pos_true, y_pos_true, angle_index - 1] = 1
+	#? greedy removal
+	#check_duplicates_space[x_pos_true, y_pos_true, :] = 1
 
 def is_duplicate(node):
 	"""
@@ -370,6 +370,7 @@ def action_move(current_node, action):
 	#create new node
 	new_cost_to_come = current_node[1] + step_size
 	new_cost_to_go = distance(state_moved[0:2], goal_state[0:2]) #heuristic function
+	new_cost_to_go *= (1.0 + 1/1000) #adjustments to heuristic
 	new_total_cost =  new_cost_to_come + new_cost_to_go
 	new_node = (new_total_cost, new_cost_to_come, new_cost_to_go) + (-1, current_node[3]) + state_moved
 	return new_node
@@ -407,7 +408,7 @@ def create_nodes(initial_state, goal_state):
 	initial_node = cost_init + (0, None) + initial_state
 	# Add initial node to the heap
 	hq.heappush(generated_nodes, initial_node)
-	while not goal_reached and len(generated_nodes) and not len(generated_nodes) > 150000:
+	while not goal_reached and len(generated_nodes) and not counter_nodes > 100000:
 		print(counter_nodes)
 		current_node = generated_nodes[0]
 		hq.heappop(generated_nodes)
@@ -493,7 +494,7 @@ visited_vectors = {} # for animation
 goal_path = [] #nodes shortest path
 hq.heapify(generated_nodes)
 
-#*matrxi to check for duplicate nodes
+#*matrix to check for duplicate nodes
 check_duplicates_space = np.zeros(
 	(rows_check_space, cols_check_space, angle_check_space))
 #* Provides matrices of rotation to instead apply sin/cos
@@ -501,13 +502,152 @@ rotation_angle_matrices = np.array([ rotation_vectors_by(angle) for angle in ang
 
 solution = create_nodes(initial_state, goal_state)
 print(solution)
-if not solution:
-	exit(0)
+# if not solution:
+# 	exit(0)
 
 generate_path(visited_nodes[-1])#modifies goal path
-#for animation of backtracking shortest path
-goal_path_animation = np.array(goal_path)
-x_shortest = goal_path_animation[:,0]
-y_shortest = goal_path_animation[:,1]
 
-#ANIMATION
+#*#####ANIMATION#######
+def draw_rotated_hexagon(image, center, side_length, color, rotation_angle, thickness=1):
+    # Calculate the coordinates of the hexagon vertices
+    angle = 60  # Angle between consecutive vertices of a regular hexagon
+    hexagon_points = np.array([
+        [
+            int(center[0] + side_length * np.cos(np.radians(i * angle + rotation_angle))),
+            int(center[1] + side_length * np.sin(np.radians(i * angle + rotation_angle)))
+        ]
+        for i in range(6)
+    ], np.int32)
+
+    # Reshape the array to the required format
+    hexagon_points = hexagon_points.reshape((-1, 1, 2))
+
+    # Draw the filled hexagon
+    cv2.fillPoly(image, [hexagon_points], color)
+
+    # Draw the hexagon outline
+    cv2.polylines(image, [hexagon_points], isClosed=True, color=(255, 255, 255), thickness=thickness)
+
+def generated_map():
+    # Create a blank image
+    arena = np.zeros((500, 1200, 3), dtype="uint8")
+    # Draw the outer boundary
+    cv2.rectangle(arena, (-1, -1), (1199, 499), (255, 255, 255), 10)
+
+    # Draw filled rectangles
+    cv2.rectangle(arena, (175, 0), (100, 400), (255, 0, 0), -1)
+    cv2.rectangle(arena, (275, 500), (350, 100), (255, 0, 0), -1)
+
+    # Draw rectangle outlines
+    cv2.rectangle(arena, (175, 0), (100, 400), (255, 255, 255), 5)
+    cv2.rectangle(arena, (275, 500), (350, 100), (255, 255, 255), 5)
+
+    # Define the polygon points
+    poly_points = np.array([[900, 50], [1100, 50], [1100, 450], [900, 450],
+                            [900, 375], [1020, 375], [1020, 125], [900, 125]])
+
+    # Draw a rotated hexagon
+    draw_rotated_hexagon(arena, (600, 250), 150, (255, 0, 0), 90, 5)
+
+    # Draw filled polygon
+    cv2.fillPoly(arena, [poly_points], color=(255, 0, 0))
+
+    # Draw polygon outline
+    cv2.polylines(arena, [poly_points], isClosed=True, color=(255, 255, 255), thickness=5)
+
+    return arena
+
+def divide_array(vect_per_frame, arr_nodes):
+	"""
+	This function is used to divide an array into chunks of a specified size.
+
+	Args:
+		vect_per_frame (int): The number of nodes to include in each chunk.
+		arr_nodes (list): A list of nodes to divide.
+
+	Returns:
+		list: A list of lists, where each sub-list represents a chunk of nodes.
+
+	"""
+	arr_size = len(arr_nodes)
+	if arr_size <= vect_per_frame:
+			return [ arr_nodes ]
+	# Calculate the number of full chunks and the size of the remaining chunk
+	number_full_slices  = arr_size // vect_per_frame
+	remaining_slice = arr_size % vect_per_frame
+	# Slice the array into chunks of the nodes per frame
+	sliced_chunks = [ arr_nodes[idx*vect_per_frame:(idx+1)*vect_per_frame]
+				for idx in range(number_full_slices) ]
+	# Remaining nodes into a separate chunk
+	if remaining_slice > 0:
+		sliced_chunks.append(arr_nodes[number_full_slices*vect_per_frame:])
+	return sliced_chunks
+
+def coordinate_image(state):
+    """
+    This function takes a state as input and returns the corresponding row and column for an image
+    Args:
+        state (tuple): The state of the robot, as a tuple of its x and y coordinates.
+
+    Returns:
+        tuple: The row and column coordinates of the state in the transformed image.
+
+    """
+    x_pos, y_pos = state
+    row, col, _ = np.dot(transformation_matrix, (x_pos, y_pos, 1))
+    return int(row),int(col)
+
+#modify data to match the coordinate system used for images in opencv where origin is in top left corner
+goal_path_animation = np.array(goal_path)
+goal_path_animation = [ coordinate_image(node[0:2]) for node in goal_path_animation ]
+goal_path_lines = []
+#create an array of pair of points representing the goal path
+for idx in range(len(goal_path_animation)-1):
+    goal_path_lines.append([goal_path_animation[idx],goal_path_animation[idx+1]])
+result_frames_vectors = [] #frames fro node exploration
+result_frames_goal = [] #frames for goal path
+#parameters for draw the bostacles
+side_length = 150
+center = (600, 250)
+rotation_angle = 90
+image = np.zeros((500, 800, 3), dtype=np.uint8)
+#create space
+arena = generated_map()
+#begin the frame creation process
+result_frames_vectors.append(arena)
+vectors_keys = list(visited_vectors.keys())
+#define a ratio of vectors to show in function of the length of the goal path
+visited_vectors_per_frame = round(len(vectors_keys) / len(goal_path))
+vectors_per_goal = divide_array(visited_vectors_per_frame, vectors_keys)
+
+#create the frames for the vectors
+for set_vectors in vectors_per_goal:
+    plotted_vector = result_frames_vectors[-1].copy()
+    for start in set_vectors:
+        set_vectors = visited_vectors[start]
+        start_vector = coordinate_image(start)
+        for vector_ends in set_vectors:
+            end_vector = coordinate_image(vector_ends)
+            cv2.arrowedLine(plotted_vector, (start_vector[1], start_vector[0]), (end_vector[1],end_vector[0]),(0, 255, 0), 1)
+    result_frames_vectors.append(plotted_vector)
+
+#create frames to add the lines which create the goal path
+first_frame_goal = result_frames_vectors[-1]
+for value in goal_path_lines:
+	cv2.line(first_frame_goal, (value[0][1],value[0][0]), (value[1][1],value[1][0]), (0,0,255),3)
+	result_frames_goal.append(first_frame_goal.copy())
+
+##add extra frames for the end to display more time the final result
+extra_frames = []
+for idx in range(30):
+	extra_frames.append(result_frames_goal[-1])
+
+result_frames_total = result_frames_vectors + result_frames_goal +extra_frames
+try:
+	video = cv2.VideoWriter(
+				'a_star_jonathan_naga_gaurav.mp4', cv2.VideoWriter_fourcc(*'MP4V'), 25, (1200, 500))
+	for frame in result_frames_total:
+		video.write(frame)
+	video.release()
+except Exception as err:
+    print('Video FFMEPG Done')
