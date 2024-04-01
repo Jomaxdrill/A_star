@@ -192,7 +192,7 @@ def check_in_obstacle(state, border):
 	#border wall 1
 	polygon_2 = np.zeros(3, dtype=bool)
 	polygon_2[0] = ( x_pos >= 0 and x_pos <= 100-tl ) and (y_pos >= height_space-tl and y_pos <= height_space)
-	polygon_2[1] = ( x_pos >= 0 and x_pos <= 5 ) and (y_pos >= tl and y_pos <= height_space-tl)
+	polygon_2[1] = ( x_pos >= 0 and x_pos <= tl ) and (y_pos >= tl and y_pos <= height_space-tl)
 	polygon_2[2] =  ( x_pos >= 0 and x_pos <= 275-tl ) and (y_pos >= 0 and  y_pos <= tl )
 	in_obstacle[4] = any(polygon_2)
 	if in_obstacle[4]:
@@ -369,7 +369,7 @@ def action_move(current_node, action):
 	if check_in_obstacle(state_moved[0:2], border_obstacle):
 		return None
 	#create new node
-	new_cost_to_come = current_node[1] + step_size
+	new_cost_to_come = current_node[1] + step_size**2
 	new_cost_to_go = distance(state_moved[0:2], goal_state[0:2]) #heuristic function
 	new_cost_to_go *= (1.0 + 1/1000) #adjustments to heuristic
 	new_total_cost =  new_cost_to_come + new_cost_to_go
@@ -666,7 +666,7 @@ extra_frames = []
 for idx in range(30):
 	extra_frames.append(result_frames_goal[-1])
 
-result_frames_total = result_frames_vectors + result_frames_goal +extra_frames
+result_frames_total = result_frames_vectors + result_frames_goal + extra_frames
 try:
 	video = cv2.VideoWriter(
 				'a_star_jonathan_naga_gaurav.mp4', cv2.VideoWriter_fourcc(*'MP4V'), 25, (1200, 500))
