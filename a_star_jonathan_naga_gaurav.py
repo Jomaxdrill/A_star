@@ -4,18 +4,21 @@ import numpy as np
 import time
 import numpy as np
 import cv2
+import math
+from tqdm import tqdm
 
 #***************INITIALIZE OF CONSTANTS***************
 #*variables to calculate time taken
 start_time = None
 end_time = None
 #*dimensional constants
+unit_step = 5 #unit for resolution of map grid in mm
 factor_dist_between_lines = np.sqrt(1**2 + (75/130)**2 ) #for hexagon perimeter
 slope_hexagon = 15/26 #for hexagon lines
-radius_goal = 1.5 #zone of acceptance of goal
+radius_goal = 1.5*unit_step #zone of acceptance of goal
 width_space = 1200 #horizontal dimension of space
 height_space = 500 #vertical dimension of space
-th_distance = 0.5 #threshold for distance difference between nodes
+th_distance = 0.5*unit_step #threshold for distance difference between nodes
 th_angle = 30 #threshold for angle
 normal_x_vector = (1, 0) #vector for orientation of the robot's front-facing
 #*define duplicate check matrix and action set constant
@@ -26,7 +29,8 @@ cols_check_space = int(height_space * factor_distance)
 angle_check_space = int(360 * factor_angle)
 angle_values_raw = list(range(0, 7)) + list(range(-5, 0))
 angle_values_real = th_angle * np.array(angle_values_raw)
-transformation_matrix = [ [0,-1,height_space],[1,0,0],[0,0,1] ] #[[scale_factor, 0], [0, scale_factor]]
+transformation_matrix = [ [0,-1,height_space],[1,0,0],[0,0,1] ] #from origin coord system to image coord system
+transformation_matrix_inv = [[0, 1, 0], [-1, 0, height_space], [0, 0, 1]]  #from image coord system origin coord system
 action_operator = {
 	'60_up': 2,
 	'30_up': 1,
@@ -59,7 +63,6 @@ def coordinate_input(name):
 		try:
 			input_coord = input(
 				f'Provide horizontal,vertical position and orientation in multiples of {th_angle} \n separated by comma ( eg: 3,8,-60 ).')
-			# print(input_coord)
 			coord_process = input_coord.split(',')
 			coord_process = [ int(element) for element in coord_process ]
 			# user provided more or less elements than allowed
@@ -67,8 +70,6 @@ def coordinate_input(name):
 				raise Exception('NotExactElements')
 			# coordinate is not valid
 			angle_incorrect =  coord_process[2] % th_angle !=0
-			# print(coord_process)
-			# print(angle_incorrect)
 			if angle_incorrect:
 				raise Exception('CoordsNotValid')
 			confirm = input('Confirm coordinate? (y/n): ')
@@ -106,21 +107,21 @@ def param_robot_input():
 	"""
 	value_provided = False
 	while not value_provided:
-		print(f'Enter parameters for the robot:\n')
+		print(f'Provide parameters for the robot:\n')
 		try:
 			input_clearance = input('Enter clearance of the obstacles in mm:\n')
 			clearance_robot = float(input_clearance)
 			input_radius = input('Enter radius of the robot in mm:\n')
 			radius_robot = float(input_radius)
 			input_step_size = input(
-				'Enter step size of the robot, between 1 and 10 units(mm):\n')
+				'Enter step size of the robot, between 1 and 10 units:\n')
 			step_size_robot = float(input_step_size)
 			if not (step_size_robot >= 1 and step_size_robot <= 10):
 				raise Exception('NotInRange')
 			confirm = input('Confirm params? (y/n):')
 			if confirm == 'y':
-				params_robot = (clearance_robot, radius_robot, step_size_robot)
-				print(f'robot parameters are {params_robot[0]} clearance, {params_robot[1]} radius, {params_robot[2]} step')
+				params_robot = (clearance_robot, radius_robot, step_size_robot*unit_step)
+				print(f'robot parameters are {params_robot[0]} mm clearance, {params_robot[1]} mm radius, {step_size_robot} step units are {params_robot[2]} mm ')
 				return params_robot
 			else:
 				print('*****Must write parameters again****')
@@ -152,12 +153,12 @@ def check_in_obstacle(state, border):
 	tl = border
 	x_pos, y_pos = state
 	in_obstacle = np.zeros(6, dtype=bool)
-	#outside of space
-	if x_pos < 0 or y_pos < 0:
-		#print(f'outside of space')
+	# #outside of space
+	if x_pos <= 0 or y_pos <= 0:
+		# print(f'outside of space')
 		return True
-	if x_pos > width_space or y_pos > height_space:
-		#print(f'outside of space')
+	if x_pos >= width_space or y_pos >= height_space:
+		# print(f'outside of space')
 		return True
 	#first obstacle
 	in_obstacle[0] = ( x_pos >= 100-tl and x_pos <= 175+tl ) and (y_pos >= 100-tl and y_pos <= height_space)
@@ -172,9 +173,9 @@ def check_in_obstacle(state, border):
 	#third obstacle
 	half_primitive = np.zeros(5, dtype=bool)
 	half_primitive[0] = ( y_pos + slope_hexagon*x_pos - 475 + ( tl * factor_dist_between_lines) ) >= 0
-	half_primitive[1] = ( y_pos + slope_hexagon*x_pos - 475 - ( ( (2*tl) + 260 ) * factor_dist_between_lines) ) <= 0
+	half_primitive[1] = ( y_pos + slope_hexagon*x_pos - 475 - ( ( tl + 260 ) * factor_dist_between_lines) ) <= 0
 	half_primitive[2] = ( y_pos - slope_hexagon*x_pos + 275 + ( tl * factor_dist_between_lines) )  >= 0
-	half_primitive[3] = ( y_pos - slope_hexagon*x_pos + 275 - ( ( (2*tl) + 260 ) * factor_dist_between_lines) )<= 0
+	half_primitive[3] = ( y_pos - slope_hexagon*x_pos + 275 - ( ( tl + 260 ) * factor_dist_between_lines) )<= 0
 	half_primitive[4] = x_pos >= 520-tl and x_pos <= 780+tl
 	in_obstacle[2] = half_primitive.all()
 	if in_obstacle[2]:
@@ -243,12 +244,9 @@ def round_float(number):
 		int: The nearest integer to the input float number.
 
 	"""
-	if number % 1 < 0.25:
+	if number % 1 < 0.5:
 		return int(number)
-	elif number % 1 < 0.75:
-		return int(number) + 0.5
-	else:
-		return int(number) + 1
+	return int(number) + 1
 
 def get_vector(node_a, node_b):
 	"""
@@ -272,8 +270,8 @@ def distance(node_a, node_b):
 
 	"""
 	substract_vector = get_vector(node_a, node_b)
-	#? Euclidean distance squared has given better performance
-	return substract_vector[0]**2 + substract_vector[1]**2
+	#? Rounded so it's not exact
+	return round(math.sqrt((substract_vector[0])**2 + (substract_vector[1])**2),0)
 
 
 def apply_action(state, type_action):
@@ -299,8 +297,8 @@ def apply_action(state, type_action):
 	vector_front = np.dot(rotation_angle_matrices[rotation_index], normal_x_vector)
 	new_vector = np.dot(rotation_angle_matrices[action_to_do], vector_front) * step_size
 	#calculate new positions and orientation
-	x_pos_new = round_float(round(x_pos + new_vector[0], 2))
-	y_pos_new = round_float(round(y_pos + new_vector[1], 2))
+	x_pos_new = round_float(x_pos + new_vector[0])
+	y_pos_new = round_float(y_pos + new_vector[1])
 	angle_degrees = theta + value_angle
 	if angle_degrees > 180:
 		angle_degrees = angle_degrees - 360
@@ -334,9 +332,9 @@ def add_to_check_matrix(node):
 	"""
 	x_pos_true, y_pos_true, angle_index = convert_check_matrix(node)
 	check_duplicates_space[x_pos_true, y_pos_true, angle_index] = 1
-	#? attempts for faster node removal
-	# check_duplicates_space[x_pos_true, y_pos_true, angle_index + 1] = 1
-	# check_duplicates_space[x_pos_true, y_pos_true, angle_index - 1] = 1
+	#? for faster node removal
+	check_duplicates_space[x_pos_true, y_pos_true, angle_index + 1] = 1
+	check_duplicates_space[x_pos_true, y_pos_true, angle_index - 1] = 1
 	#? greedy removal
 	#check_duplicates_space[x_pos_true, y_pos_true, :] = 1
 
@@ -347,10 +345,12 @@ def is_duplicate(node):
 	Args:
 		node (tuple): The node to check, as a tuple of its x and y coordinates and its orientation.
 	"""
-	x_pos_true, y_pos_true, angle_index = convert_check_matrix(node)
-	if check_duplicates_space[x_pos_true, y_pos_true, angle_index] == 1:
+	try:
+		x_pos_true, y_pos_true, angle_index = convert_check_matrix(node)
+		return check_duplicates_space[x_pos_true, y_pos_true, angle_index] == 1
+	except IndexError as e:
 		return True
-	return False
+
 
 def action_move(current_node, action):
 	"""
@@ -361,17 +361,20 @@ def action_move(current_node, action):
 		Node: new Node with new configuration and state
 	"""
 	state_moved = apply_action(current_node[5:], action)
+	#*check when actions could inmediately be out of bounds
+	if (state_moved[0] <= 0 or state_moved[1] <= 0) or (state_moved[0] >= width_space or state_moved[1] >= height_space):
+		return None
+	# *check new node is in obstacle space
+	row, col = coordinate_image(state_moved[0:2])
+	if matrix_check_obstacle[row][col] == 1:
+		return None
 	# *check by the state duplicate values between the children
 	node_already_visited = is_duplicate(state_moved)
 	if node_already_visited:
 		return None
-	# *check new node is in obstacle space
-	if check_in_obstacle(state_moved[0:2], border_obstacle):
-		return None
 	#create new node
-	new_cost_to_come = current_node[1] + step_size**2
+	new_cost_to_come = current_node[1] + step_size
 	new_cost_to_go = distance(state_moved[0:2], goal_state[0:2]) #heuristic function
-	new_cost_to_go *= (1.0 + 1/1000) #adjustments to heuristic
 	new_total_cost =  new_cost_to_come + new_cost_to_go
 	new_node = (new_total_cost, new_cost_to_come, new_cost_to_go) + (-1, current_node[3]) + state_moved
 	return new_node
@@ -385,11 +388,11 @@ def check_goal_reached(node_a, goal):
 	"""
 	dist_centers = distance(node_a[0:2], goal[0:2])
 	orientation_valid = np.abs(node_a[2] - goal[2]) <= 2*th_angle #30 degrees both directions
-	center_robot_in_radius_goal = dist_centers < radius_goal**2
-	if center_robot_in_radius_goal and orientation_valid:
-		return True
-	return False
+	center_robot_in_radius_goal = dist_centers < radius_goal
+	return center_robot_in_radius_goal and orientation_valid
 #A* ALGORITHM FUNCTIONS
+#*NODE STRUCTURE----------------------------------------------------------------
+# ?(cost_total, cost_to_come,cost_to_go, index, parent, x_pos, y_pos, angle)
 def create_nodes(initial_state, goal_state):
 	"""Creates the State space of all possible movements until goal state is reached by applying the A* algorithm.
 
@@ -401,6 +404,7 @@ def create_nodes(initial_state, goal_state):
 			str: 'DONE'. The process have ended thus we have a solution in the tree structure generated.
 	"""
 	# Start the timer
+	print("A* start!!\n")
 	start_time = time.time()
 	goal_reached = False
 	counter_nodes = 0
@@ -409,8 +413,10 @@ def create_nodes(initial_state, goal_state):
 	initial_node = cost_init + (0, None) + initial_state
 	# Add initial node to the heap
 	hq.heappush(generated_nodes, initial_node)
-	while not goal_reached and len(generated_nodes) and not counter_nodes > 100000:
-		print(counter_nodes)
+	generated_nodes_indexing[initial_state] = 0
+	print("node counting:\n")
+	while not goal_reached and len(generated_nodes):
+		print(counter_nodes,end="\r")
 		current_node = generated_nodes[0]
 		hq.heappop(generated_nodes)
 		# Mark node as visited
@@ -423,7 +429,7 @@ def create_nodes(initial_state, goal_state):
 		if goal_reached:
 			goal_reached = True
 			end_time = time.time()
-			return f'DONE in {end_time-start_time} seconds.'
+			return f'DONE in {end_time-start_time} seconds.\n'
 		# Apply action set to node to get new states/children
 		for action in action_set:
 			child = action_move(current_node, action)
@@ -432,24 +438,19 @@ def create_nodes(initial_state, goal_state):
 				continue
 			visited_vectors[current_node[5:7]].append(child[5:7])
 			# Check if child is in open list generated nodes
-			where_is_node = 0
-			is_in_open_list = False
-			for node in generated_nodes:
-				if node[5:] == child[5:]:
-					is_in_open_list = True
-					break
-				where_is_node += 1
-			if not is_in_open_list:
+			in_open_list = generated_nodes_indexing.get(child[5:], None)
+			if not in_open_list:
 				counter_nodes += 1
 				child_to_enter = child[0:3] + (counter_nodes,) + child[4:]
 				hq.heappush(generated_nodes, child_to_enter)
+				generated_nodes_indexing[child[5:]] = (child[1], counter_nodes)
 			# check if cost to come is greater in node in open list
-			elif generated_nodes[where_is_node][1] > child[1]:
-				# Update parent node and cost of this node in the generated nodes heap
-				current_index = generated_nodes[where_is_node][3]
-				generated_nodes[where_is_node] = child[0:3] + (current_index,) + child[4:]
+			elif in_open_list[0] > child[1]:
+				#?create a new node with cost 0 so it can be visited quickly and current node will never be visited
+				child_to_enter = (0,0,0) + (in_open_list[1],) + child[4:]
+				hq.heappush(generated_nodes, child_to_enter)
 	end_time = time.time()
-	print(f'No solution found. Process took {end_time-start_time} seconds.')
+	print(f'No solution found. Process took {end_time-start_time} seconds.\n')
 	return None
 
 def generate_path(node):
@@ -470,7 +471,32 @@ def generate_path(node):
 		node = visited_nodes[parent_at] if parent_at < len(visited_nodes) else None
 	return True
 
+def coordinate_plane(coord):
+	"""
+	This function takes a coord of matrix and return the coordinate in the bottom left corner of the plane
+		coord (tuple): The state of the robot, as a tuple of its x and y coordinates.
 
+	Returns:
+		tuple: The row and column coordinates of the state in the transformed image.
+
+	"""
+	row,col = coord
+	x_pos, y_pos, _ = np.dot(transformation_matrix_inv, (row, col, 1))
+	return x_pos, y_pos
+
+def coordinate_image(state):
+	"""
+	This function takes a state as input and returns the corresponding row and column for an image
+	Args:
+		state (tuple): The state of the robot, as a tuple of its x and y coordinates.
+
+	Returns:
+		tuple: The row and column coordinates of the state in the transformed image.
+
+	"""
+	x_pos, y_pos = state
+	row, col, _ = np.dot(transformation_matrix, (x_pos, y_pos, 1))
+	return int(row),int(col)
 #USER VARIABLES
 #*define input and goal coordinates
 initial_state = coordinate_input('initial')
@@ -478,6 +504,13 @@ goal_state = coordinate_input('goal')
 #*define robot parameters
 clearance, radius_robot, step_size = param_robot_input()
 border_obstacle = clearance + radius_robot
+matrix_check_obstacle = np.zeros((height_space, width_space))
+for row in tqdm(range(height_space), desc ="Setting obstacle space..."):
+	for col in range(width_space):
+		x_pos, y_pos = coordinate_plane((row,col))
+		if check_in_obstacle((x_pos, y_pos),border_obstacle):
+			matrix_check_obstacle[row][col] = 1
+print('Verifying positions...')
 verify_initial_position = check_in_obstacle(initial_state[0:2], border_obstacle)
 verify_goal_position = check_in_obstacle(goal_state[0:2], border_obstacle)
 if verify_initial_position:
@@ -486,9 +519,10 @@ if verify_initial_position:
 if verify_goal_position:
 	print("GOAL HITS OBSTACLE!! Please run the program again.")
 	exit(0)
-
+time.sleep(3)
 #GENERAL VARIABLES FOR A*
 generated_nodes = []  # open list
+generated_nodes_indexing = {} #to track indexing as open list changes
 generated_nodes_total = []  # for animation of all
 visited_nodes = []  # full list node visited
 visited_vectors = {} # for animation
@@ -498,88 +532,54 @@ hq.heapify(generated_nodes)
 #*matrix to check for duplicate nodes
 check_duplicates_space = np.zeros(
 	(rows_check_space, cols_check_space, angle_check_space))
-#* Provides matrices of rotation to instead apply sin/cos
+#* Provides matrices of rotation to replace sin/cos
 rotation_angle_matrices = np.array([ rotation_vectors_by(angle) for angle in angle_values_real ])
 
 solution = create_nodes(initial_state, goal_state)
 print(solution)
-if not solution:
-	exit(0)
-
+# if not solution:
+# 	exit(0)
 generate_path(visited_nodes[-1])#modifies goal path
 
 #*#####ANIMATION#######
-def draw_rotated_hexagon(image, center, side_length, color, rotation_angle, thickness=1):
-    """
-    Draws a filled hexagon on an image.
-
-    Args:
-        image (np.ndarray): The image on which to draw the hexagon.
-        center (tuple): The (x, y) coordinates of the center of the hexagon.
-        side_length (float): The length of the sides of the hexagon.
-        color (tuple): The color of the hexagon, specified as a tuple of RGB values (0-255).
-        rotation_angle (float): The angle, in degrees, by which to rotate the hexagon.
-        thickness (int, optional): The thickness of the outline of the hexagon, in pixels. Defaults to 1.
-
-    Returns:
-        None: This function does not return any values.
-
-    """
-    # Calculate the coordinates of the hexagon vertices
-    angle = 60  # Angle between consecutive vertices of a regular hexagon
-    hexagon_points = np.array([
-        [
-            int(center[0] + side_length * np.cos(np.radians(i * angle + rotation_angle))),
-            int(center[1] + side_length * np.sin(np.radians(i * angle + rotation_angle)))
-        ]
-        for i in range(6)
-    ], np.int32)
-
-    # Reshape the array to the required format
-    hexagon_points = hexagon_points.reshape((-1, 1, 2))
-
-    # Draw the filled hexagon
-    cv2.fillPoly(image, [hexagon_points], color)
-
-    # Draw the hexagon outline
-    cv2.polylines(image, [hexagon_points], isClosed=True, color=(255, 255, 255), thickness=thickness)
-
 def generated_map():
-    """
-    Creates a blank image with the outer boundary of the arena drawn on it.
-    Draws filled rectangles for the initial and goal states, and outlines for them.
-    Defines the polygon points for the rotated hexagon and the polygon.
-    Draws the rotated hexagon and the filled polygon, and outlines them.
-    Returns:
-        np.ndarray: The blank image with the arena drawn on it.
-    """
-    # Create a blank image
-    arena = np.zeros((500, 1200, 3), dtype="uint8")
-    # Draw the outer boundary
-    cv2.rectangle(arena, (-1, -1), (1199, 499), (255, 255, 255), 10)
+	"""
+	Creates a blank image with the outer boundary of the arena drawn on it.
+	Draws filled rectangles for the initial and goal states, and outlines for them.
+	Defines the polygon points for the rotated hexagon and the polygon.
+	Draws the rotated hexagon and the filled polygon, and outlines them.
+	Returns:
+		np.ndarray: The blank image with the arena drawn on it.
+	"""
+	# Create a blank image
+	arena = np.zeros((height_space, width_space, 3), dtype="uint8")
+	# Draw the outer boundary
+	cv2.rectangle(arena, (0, 0), (width_space, height_space), (255, 255, 255), int(border_obstacle)*2)
 
-    # Draw filled rectangles
-    cv2.rectangle(arena, (175, 0), (100, 400), (255, 0, 0), -1)
-    cv2.rectangle(arena, (275, 500), (350, 100), (255, 0, 0), -1)
+	# Draw filled rectangles
+	cv2.rectangle(arena, (175, 0), (100, 400), (255, 0, 0), -1)
+	cv2.rectangle(arena, (275, 500), (350, 100), (255, 0, 0), -1)
 
-    # Draw rectangle outlines
-    cv2.rectangle(arena, (175, 0), (100, 400), (255, 255, 255), 5)
-    cv2.rectangle(arena, (275, 500), (350, 100), (255, 255, 255), 5)
+	# Draw rectangle outlines
+	cv2.rectangle(arena, (175, 0), (100, 400), (255, 255, 255),int(border_obstacle))
+	cv2.rectangle(arena, (275, 500), (350, 100), (255, 255, 255), int(border_obstacle))
 
-    # Define the polygon points
-    poly_points = np.array([[900, 50], [1100, 50], [1100, 450], [900, 450],
-                            [900, 375], [1020, 375], [1020, 125], [900, 125]])
+	# Define the polygon points
+	poly_points = np.array([[900, 50], [1100, 50], [1100, 450], [900, 450],
+							[900, 375], [1020, 375], [1020, 125], [900, 125]])
 
-    # Draw a rotated hexagon
-    draw_rotated_hexagon(arena, (600, 250), 150, (255, 0, 0), 90, 5)
+	# # Draw a rotated hexagon
+	points_obs_3 = np.array([[650,400],[780,325],[780,175],[650,100],[520,175],[520,325]])
+	cv2.fillPoly(arena, [points_obs_3], (255, 0, 0))
+	# Draw hexagon outline
+	cv2.polylines(arena, [points_obs_3], isClosed=True, color=(255, 255, 255), thickness=int(border_obstacle))
 
-    # Draw filled polygon
-    cv2.fillPoly(arena, [poly_points], color=(255, 0, 0))
+	# Draw filled polygon
+	cv2.fillPoly(arena, [poly_points], color=(255, 0, 0))
+	# Draw polygon outline
+	cv2.polylines(arena, [poly_points], isClosed=True, color=(255, 255, 255), thickness=int(border_obstacle))
 
-    # Draw polygon outline
-    cv2.polylines(arena, [poly_points], isClosed=True, color=(255, 255, 255), thickness=5)
-
-    return arena
+	return arena
 
 def divide_array(vect_per_frame, arr_nodes):
 	"""
@@ -607,34 +607,19 @@ def divide_array(vect_per_frame, arr_nodes):
 		sliced_chunks.append(arr_nodes[number_full_slices*vect_per_frame:])
 	return sliced_chunks
 
-def coordinate_image(state):
-    """
-    This function takes a state as input and returns the corresponding row and column for an image
-    Args:
-        state (tuple): The state of the robot, as a tuple of its x and y coordinates.
-
-    Returns:
-        tuple: The row and column coordinates of the state in the transformed image.
-
-    """
-    x_pos, y_pos = state
-    row, col, _ = np.dot(transformation_matrix, (x_pos, y_pos, 1))
-    return int(row),int(col)
-
 #modify data to match the coordinate system used for images in opencv where origin is in top left corner
 goal_path_animation = np.array(goal_path)
 goal_path_animation = [ coordinate_image(node[0:2]) for node in goal_path_animation ]
 goal_path_lines = []
 #create an array of pair of points representing the goal path
 for idx in range(len(goal_path_animation)-1):
-    goal_path_lines.append([goal_path_animation[idx],goal_path_animation[idx+1]])
+	goal_path_lines.append([goal_path_animation[idx],goal_path_animation[idx+1]])
 result_frames_vectors = [] #frames fro node exploration
 result_frames_goal = [] #frames for goal path
-#parameters for draw the bostacles
-side_length = 150
-center = (600, 250)
-rotation_angle = 90
-image = np.zeros((500, 800, 3), dtype=np.uint8)
+#parameters for draw the obstacles
+frames_per_sec = 25
+print('Creating animation:')
+time.sleep(2)
 #create space
 arena = generated_map()
 #begin the frame creation process
@@ -646,32 +631,33 @@ vectors_per_goal = divide_array(visited_vectors_per_frame, vectors_keys)
 
 #create the frames for the vectors
 for set_vectors in vectors_per_goal:
-    plotted_vector = result_frames_vectors[-1].copy()
-    for start in set_vectors:
-        set_vectors = visited_vectors[start]
-        start_vector = coordinate_image(start)
-        for vector_ends in set_vectors:
-            end_vector = coordinate_image(vector_ends)
-            cv2.arrowedLine(plotted_vector, (start_vector[1], start_vector[0]), (end_vector[1],end_vector[0]),(0, 255, 0), 1)
-    result_frames_vectors.append(plotted_vector)
+	plotted_vector = result_frames_vectors[-1].copy()
+	for start in set_vectors:
+		set_vectors = visited_vectors[start]
+		start_vector = coordinate_image(start)
+		for vector_ends in set_vectors:
+			end_vector = coordinate_image(vector_ends)
+			cv2.arrowedLine(plotted_vector, (start_vector[1], start_vector[0]), (end_vector[1],end_vector[0]),(0, 255, 0), 1)
+	result_frames_vectors.append(plotted_vector)
 
 #create frames to add the lines which create the goal path
-first_frame_goal = result_frames_vectors[-1]
+first_frame_goal = result_frames_vectors[-1].copy()
 for value in goal_path_lines:
 	cv2.line(first_frame_goal, (value[0][1],value[0][0]), (value[1][1],value[1][0]), (0,0,255),3)
 	result_frames_goal.append(first_frame_goal.copy())
 
 ##add extra frames for the end to display more time the final result
 extra_frames = []
-for idx in range(30):
-	extra_frames.append(result_frames_goal[-1])
+for idx in range(50):
+	extra_frames.append(first_frame_goal)
 
-result_frames_total = result_frames_vectors + result_frames_goal + extra_frames
+#final processing
+result_frames_total = result_frames_vectors + result_frames_goal+ extra_frames
 try:
 	video = cv2.VideoWriter(
-				'a_star_jonathan_naga_gaurav.mp4', cv2.VideoWriter_fourcc(*'MP4V'), 25, (1200, 500))
-	for frame in result_frames_total:
+				'a_star_jonathan_naga_gaurav.mp4', cv2.VideoWriter_fourcc(*'mp4v'), frames_per_sec, (width_space, height_space))
+	for frame in tqdm(result_frames_total, desc ="Processing frames..."):
 		video.write(frame)
 	video.release()
 except Exception as err:
-    print('Video FFMEPG Done')
+	print('Video FFMEPG Done')

@@ -9,10 +9,11 @@ saigopal 119484128
 ugaurav 120386640
 
 ## DEPENDENCIES and PACKAGES
-(pip installer used)
 python 3.11.7
+(pip installer used)
 numpy 1.26.3
 opencv-python 4.9.0.80
+tqdm 4.66.2
 
 ## LIBRARIES
  heapq
@@ -20,13 +21,18 @@ opencv-python 4.9.0.80
  time
  numpy
  cv2
+ math
+ tqdm
 
 ## INSTRUCTIONS
 
 -Install previously the linux(Ubuntu) the ffmepg package running on the terminal the command:
 	sudo apt install ffmpeg
 
+-Install all necessary dependencies and libraries with pip for example. Recommended to run in your own python environment.
+
 -Using linux terminal locate the folder with the python file 'a_star_jonathan_naga_gaurav.py'
+
 
 -Run the command 'python3 a_star_jonathan_naga_gaurav.py'
 
