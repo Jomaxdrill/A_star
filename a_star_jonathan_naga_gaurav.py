@@ -579,6 +579,11 @@ def generated_map():
 	# Draw polygon outline
 	cv2.polylines(arena, [poly_points], isClosed=True, color=(255, 255, 255), thickness=int(border_obstacle))
 
+	#draw initial and goal state points
+	y_init, x_init = coordinate_image(initial_state[0:2])
+	y_goal, x_goal = coordinate_image(goal_state[0:2])
+	cv2.circle(arena,(x_init,y_init) , 3, (0,255,255), thickness=-1)
+	cv2.circle(arena,(x_goal,y_goal) , 3, (0,165,255), thickness=-1)
 	return arena
 
 def divide_array(vect_per_frame, arr_nodes):
@@ -643,7 +648,7 @@ for set_vectors in vectors_per_goal:
 #create frames to add the lines which create the goal path
 first_frame_goal = result_frames_vectors[-1].copy()
 for value in goal_path_lines:
-	cv2.line(first_frame_goal, (value[0][1],value[0][0]), (value[1][1],value[1][0]), (0,0,255),3)
+	cv2.line(first_frame_goal, (value[0][1],value[0][0]), (value[1][1],value[1][0]), (0,0,255),2)
 	result_frames_goal.append(first_frame_goal.copy())
 
 ##add extra frames for the end to display more time the final result
